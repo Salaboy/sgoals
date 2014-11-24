@@ -7,18 +7,21 @@ package com.salaboy.sgoals.model.impl;
 
 import com.salaboy.sgoals.model.api.Atom;
 import com.salaboy.sgoals.model.api.FluentPredicate;
+import com.salaboy.sgoals.model.api.Graph;
 import com.salaboy.sgoals.model.api.Layer;
 import com.salaboy.sgoals.model.api.Link;
 import com.salaboy.sgoals.model.api.Operator;
 import com.salaboy.sgoals.model.api.Path;
 import com.salaboy.sgoals.model.api.Predicate;
 import com.salaboy.sgoals.model.api.SGoalsPathFinder;
+import com.salaboy.sgoals.model.api.Step;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,10 +32,16 @@ import java.util.Set;
  */
 public class SGoalsPathFinderImpl implements SGoalsPathFinder {
 
-    private Layer initialLayer;
-    private Set<Predicate> initialStatePredicates;
+    private Graph graph = new GraphImpl();
+
     private Set<Predicate> goalStatePredicates;
+
     private List<Operator> unGroundedOperators;
+    
+    private Map<Integer, Set<Predicate>> bannedGoalsForLayer = new HashMap<Integer, Set<Predicate>>();
+    
+    private Path path;
+    
     private int layerCount = 0;
 
     public SGoalsPathFinderImpl(Set<Predicate> initialStatePredicates, List<Operator> operators, Set<Predicate> goalStatePredicates) {
@@ -43,34 +52,49 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
             throw new IllegalStateException("The goal state predicates must be grounded");
         }
         this.unGroundedOperators = operators;
-        this.initialStatePredicates = initialStatePredicates;
+
         this.goalStatePredicates = goalStatePredicates;
-        initialLayer = new LayerImpl("initialLayer", null, null, initialStatePredicates, null, null);
+
+        graph.addLayer(new LayerImpl("initialLayer", null, null, initialStatePredicates, null, null));
 
     }
 
     @Override
-    public Path[] process() {
+    public Path process() {
 
-        // First I need to check if the operator applies to the initial state
-        // then I need to verify that when it is grounded is applicable
-        // then I need to check for the intersection with the mutex collection for the state
-        expand(initialLayer);
+        /*
+         While we don't find the goal and there is no fixed point we expand the graph
+         */
+        while (!isGoalFulfilled(graph.getLastLayer()) && !reachedFixedPoint(graph)) {
+            Layer layer = expand();
+            graph.addLayer(layer);
+        }
 
-        return new Path[0];
+        /*
+         Once we have the graph expanded we proceed to extract the steps
+         */
+        path = new PathImpl(graph.size() -1);
+        Set<Predicate> goal = new HashSet();
+        goal.addAll(goalStatePredicates);
+        
+        extract(graph, goal, graph.size() - 1);
+
+
+        
+        return path;
     }
     /*
      *   This method is supposed to take all the current layer and calculate the next one 
      *   iteratively
      */
 
-    private void expand(Layer layer) {
+    private Layer expand() {
         System.out.println("-----------------------------------------");
-        System.out.println("Layer : " + layer.getName());
-        if (isGoalFulfilled(layer)) {
-            return;
-        }
+        System.out.println("Layer : " + graph.getLastLayer().getName());
+        Layer layer = graph.getLastLayer();
 
+        // The goal is contained in the layer and the predicates inside it are not in the mutexed list
+        // Or we reached a fixed point
         List<Operator> groundedOperators = findAndGroundOperators(layer);
 
         if (groundedOperators != null) {
@@ -143,9 +167,8 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
 
         //Creating and expanding the next layer
         layerCount++;
-        Layer newLayer = new LayerImpl("layer" + layerCount, groundedOperators, mutexedOperators, nextPredicates, mutexedPredicates, links);
-        expand(newLayer);
-        processGoal(newLayer);
+        return new LayerImpl("layer" + layerCount, groundedOperators, mutexedOperators, nextPredicates, mutexedPredicates, links);
+
     }
 
     /*
@@ -427,15 +450,6 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
                     }
 
                 }
-//                System.out.println(" Predicate A: " + predicateA + " is produced by:");
-//                for (Operator op : producesA) {
-//                    System.out.println("\t\t\t Op: " + op);
-//                }
-//
-//                System.out.println(" Predicate B: " + predicateB + " is produced by:");
-//                for (Operator op : producesB) {
-//                    System.out.println("\t\t\t Op: " + op);
-//                }
 
                 if (!producesA.isEmpty() && !producesB.isEmpty()) {
                     for (int k = 0; k < producesA.size(); k++) {
@@ -489,8 +503,7 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
                 goalCounter++;
             }
         }
-        System.out.println("Goal Target = " + goalStatePredicates.size());
-        System.out.println("Goal Counter = " + goalCounter);
+        
         if (goalCounter == goalStatePredicates.size()) {
             for (int i = 0; i < goalPredicates.size(); i++) {
                 for (int j = 0; j < goalPredicates.size() - 1; j++) {
@@ -500,7 +513,7 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
                     }
                     Predicate predicateA = goalPredicates.get(i);
                     Predicate predicateB = goalPredicates.get(count);
-                    if(layer.getMutexedPredicates().get(predicateA).contains(predicateB)){
+                    if (layer.getMutexedPredicates().get(predicateA).contains(predicateB)) {
                         return false;
                     }
                 }
@@ -512,17 +525,167 @@ public class SGoalsPathFinderImpl implements SGoalsPathFinder {
         return true;
     }
 
-    private void processGoal(Layer layer) {
-        System.out.println(">> Processing Layer : "+layer.getName());
-        Set<Link> links = layer.getLinks();
-        for(Link l : links){
-            // The first time the goals to check are goalStatePredicates, but then the next layer have different goals
-            // which are the pre conditions of the actions selected in the previous layer
-            so do as the comment says!
-            if(l.getType().equals("possitive") && goalStatePredicates.contains(l.getPredicate())){
-                System.out.println("Selected Link: "+l);
-            }
+    /*
+     * Extract from a graph the set of Operators to achieve a goal state
+     */
+    private Step extract(Graph graph, Set<Predicate> goal, int forLayer) {
+       // System.out.println(">> Extract: (layer = " + forLayer + ", goal = [" + goal + "] )");
+        if (forLayer == 0) {
+            return new StepImpl(new HashSet<Operator>());
         }
+        
+        // If goal belongs to delta(i) return failure
+        if (bannedGoalsForLayer.get(forLayer) != null && bannedGoalsForLayer.get(forLayer).containsAll(goal)) {
+            return null;
+        }
+
+        Step stepI = gpSearch(graph, goal, new HashSet<Operator>(), forLayer);
+        // If StepI != failure return StepI
+        if (stepI != null) {
+            return stepI;
+        }
+
+        // Else add goal to delta(i) and return failure
+        if(bannedGoalsForLayer.get(forLayer) == null){
+            bannedGoalsForLayer.put(forLayer, new HashSet<Predicate>());
+        }
+        bannedGoalsForLayer.get(forLayer).addAll(goal);
+        return null;
+
+    }
+
+    /*
+     * A FIxed Point is found if the last two layers has equal predicates and mutexed predicates
+     */
+    private boolean reachedFixedPoint(Graph graph) {
+
+        if (graph.size() > 2) {
+            Layer lastLayer = graph.getLastLayer();
+            Layer previousLayer = graph.getLayer(graph.size() - 2);
+            // Quick exit if the number of fluent predicates are not equal
+            if (lastLayer.getFluentPredicates().size() != previousLayer.getFluentPredicates().size()) {
+                return false;
+            } else { // Check for fluent predicates
+
+                for (Predicate p : previousLayer.getFluentPredicates()) {
+                    if (!lastLayer.getFluentPredicates().contains(p)) {
+                        return false;
+                    }
+                }
+            }
+            // Quick exit if the number of mutexed fluent predicates are not equal
+            if (lastLayer.getMutexedPredicates().size() != previousLayer.getMutexedPredicates().size()) {
+                return false;
+            } else { // Check for mutexed fluent predicates
+                for (Predicate p : previousLayer.getMutexedPredicates().keySet()) {
+                    Set<Predicate> previousLayerMutexPredicates = previousLayer.getMutexedPredicates().get(p);
+                    Set<Predicate> lastLayerMutexPredicates = lastLayer.getMutexedPredicates().get(p);
+                    for (Predicate pr : previousLayerMutexPredicates) {
+                        if (!lastLayerMutexPredicates.contains(pr)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+
+    
+
+    private Step gpSearch(Graph graph, Set<Predicate> goal, Set<Operator> stepI, int forLayer) {
+       // System.out.println("\t >> GPSearch: (layer = " + forLayer + ", goal = [" + goal + "], stepI = [" + stepI + "] )");
+        Layer layer = graph.getLayer(forLayer);
+
+        if (goal.isEmpty()) {
+          //  System.out.println(">> GPSearch Goal Empty");
+
+            Set<Predicate> newGoalPredicates = new HashSet<Predicate>();
+
+            for (Operator o : stepI) {
+                for (Predicate p : o.getPreconditions()) {
+                    if (p instanceof FluentPredicate) {
+                        newGoalPredicates.add(p);
+                    }
+                }
+            }
+            path.addStep(forLayer -1, new StepImpl(stepI));
+            
+            return extract(graph, newGoalPredicates, forLayer - 1);
+        } else {
+
+            Iterator<Predicate> iterator = goal.iterator();
+            Map<Predicate, Set<Operator>> resolversMap = new HashMap<Predicate, Set<Operator>>();
+            if (iterator.hasNext()) {
+                Predicate next = iterator.next();
+                List<Operator> operatorsFromLayer = layer.getOperators();
+                for (Operator o : operatorsFromLayer) {
+                    if ((o.getPossitiveEffects().contains(next))) {
+                        for (Operator op : operatorsFromLayer) {
+                            Set<Operator> mutexedOps = layer.getMutexedOperators().get(o);
+                            if (resolversMap.get(next) == null) {
+                                    resolversMap.put(next, new HashSet<Operator>());
+                            }
+                            if (mutexedOps != null && !mutexedOps.contains(op)) {
+                                resolversMap.get(next).add(o);
+                            }else if (mutexedOps == null){
+                                resolversMap.get(next).add(o);
+                            }
+                        }
+                    }
+
+                }
+                if (resolversMap.get(next) != null && !resolversMap.get(next).isEmpty()) {
+                    Predicate predicateWithResolver = resolversMap.keySet().iterator().next();
+                    Set<Operator> resolvers = resolversMap.get(predicateWithResolver);
+                    if (!resolvers.isEmpty()) {
+                        Iterator<Operator> resolversIt = resolvers.iterator();
+                        while(resolversIt.hasNext()){
+                            Operator operatorA = resolversIt.next();
+                            // Find if OperatorA is mutex with any of the Operators in StepI
+                            boolean isMutex = false;
+                            for(Operator key : stepI){
+                                if(layer.getMutexedOperators().get(operatorA) != null && layer.getMutexedOperators().get(key).contains(operatorA)){
+                                    isMutex = true;
+                                } else if(layer.getMutexedOperators().get(operatorA) != null && layer.getMutexedOperators().get(operatorA).contains(key)){
+                                    isMutex = true;
+                                }
+                            }
+                            if(!isMutex){
+                            
+                                List<Predicate> removePossitiveEffects = operatorA.getPossitiveEffects();
+                                Set<Predicate> filteredGoal = new HashSet<Predicate>(goal);
+
+
+                                for (Predicate p : removePossitiveEffects) {
+        
+                                    if (filteredGoal.contains(p)) {
+                                        filteredGoal.remove(p);
+                                    }
+                                }
+                                Set<Operator> stepIPlusA = new HashSet<Operator>(stepI);
+                                stepIPlusA.add(operatorA);
+                                return gpSearch(graph, filteredGoal, stepIPlusA, forLayer);
+                            }
+                        }
+                        return null;
+                        
+                        
+                    } else {
+                        return null;
+                    }
+
+                } else {
+                    return null;
+                }
+            }
+
+        }
+        return new StepImpl(stepI);
     }
 
 }

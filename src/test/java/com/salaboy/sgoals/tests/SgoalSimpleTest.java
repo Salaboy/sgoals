@@ -9,6 +9,7 @@ import com.salaboy.sgoals.model.api.Operator;
 import com.salaboy.sgoals.model.api.Path;
 import com.salaboy.sgoals.model.api.Predicate;
 import com.salaboy.sgoals.model.api.SGoalsPathFinder;
+import com.salaboy.sgoals.model.api.Step;
 import com.salaboy.sgoals.model.impl.SGoalsPathFinderImpl;
 import com.salaboy.sgoals.model.impl.example.model.Container;
 import com.salaboy.sgoals.model.impl.example.model.Location;
@@ -24,10 +25,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -36,24 +33,7 @@ import org.junit.Test;
  */
 public class SgoalSimpleTest {
 
-    public SgoalSimpleTest() {
-    }
-
-    @BeforeClass
-    public static void setUpClass() {
-    }
-
-    @AfterClass
-    public static void tearDownClass() {
-    }
-
-    @Before
-    public void setUp() {
-    }
-
-    @After
-    public void tearDown() {
-    }
+   
 
     @Test
     /*
@@ -88,7 +68,7 @@ public class SgoalSimpleTest {
         operators.add(new LoadOperatorImpl());
         operators.add(new UnloadOperatorImpl());
 
-        
+            
         Set<Predicate> goalStatePredicates = new HashSet<Predicate>();
         goalStatePredicates.add(new InPredicateImpl(contA, loc2));
         goalStatePredicates.add(new InPredicateImpl(contB, loc1));
@@ -97,12 +77,12 @@ public class SgoalSimpleTest {
         // and it needs to be something like find paths instead of Planner
         SGoalsPathFinder goalPathFinder = new SGoalsPathFinderImpl(initialStatePredicates, operators, goalStatePredicates);
 
-        Path[] paths = goalPathFinder.process();
-        if (paths.length == 0) {
+        Path path = goalPathFinder.process();
+        if (path.getSteps().length == 0) {
             System.out.println("There is no solution for this set of initial state, operators and goal state");
         } else {
-            for (Path plan : paths) {
-                System.out.println("Plan: " + goalPathFinder);
+            for (Step step : path.getSteps()) {
+                System.out.println("Step: " + step);
             }
         }
 

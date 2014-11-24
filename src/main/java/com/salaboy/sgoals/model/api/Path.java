@@ -11,5 +11,8 @@ package com.salaboy.sgoals.model.api;
  * @author salaboy
  */
 public interface Path {
+    Step[] getSteps();
+    void addStep(int i, Step step);
+    
     
 }

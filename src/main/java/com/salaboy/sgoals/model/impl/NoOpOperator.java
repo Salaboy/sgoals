@@ -56,12 +56,12 @@ public class NoOpOperator extends AbstractOperatorImpl{
 
     @Override
     public String toFormatedString(boolean full) {
-        return "No Op Operator for " + predicate.toFormatedString();
+        return "Alpha-" + predicate.toFormatedString();
     }
 
     @Override
     public String toString() {
-        return "NoOpOperator{" + "predicate=" + predicate + '}';
+        return "Alpha-" +  predicate;
     }
     
     

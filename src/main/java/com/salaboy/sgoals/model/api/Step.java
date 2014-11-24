@@ -3,13 +3,14 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-
 package com.salaboy.sgoals.model.api;
+
+import java.util.Set;
 
 /**
  *
  * @author salaboy
  */
-public interface SGoalsPathFinder {
-    Path process();
+public interface Step {
+    Set<Operator> getOperators();
 }
